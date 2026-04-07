@@ -91,7 +91,7 @@ const interviewReportSchema = new Schema({
     },
     title: {
         type: String,
-        required: [ true, "Job title is required" ]
+        
     }
 }, {
     timestamps: true

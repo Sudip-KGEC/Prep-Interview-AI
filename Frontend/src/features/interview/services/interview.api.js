@@ -16,7 +16,7 @@ export const generateInterviewReport = async ({ jobDescription, selfDescription,
     formData.append("selfDescription", selfDescription)
     formData.append("resume", resumeFile)
 
-    const response = await api.post("/api/interview/", formData, {
+    const response = await api.post("/api/interview", formData, {
         headers: {
             "Content-Type": "multipart/form-data"
         }
@@ -41,7 +41,7 @@ export const getInterviewReportById = async (interviewId) => {
  * @description Service to get all interview reports of logged in user.
  */
 export const getAllInterviewReports = async () => {
-    const response = await api.get("/api/interview/")
+    const response = await api.get("/api/interview")
 
     return response.data
 }
@@ -51,9 +51,17 @@ export const getAllInterviewReports = async () => {
  * @description Service to generate resume pdf based on user self description, resume content and job description.
  */
 export const generateResumePdf = async ({ interviewReportId }) => {
-    const response = await api.post(`/api/interview/resume/pdf/${interviewReportId}`, null, {
-        responseType: "blob"
-    })
+    try {
+        const response = await api.get(
+            `/api/interview/resume/pdf/${interviewReportId}`, 
+            {
+                responseType: "blob"
+            }
+        )
 
-    return response.data
+        return response
+    } catch (error) {
+        console.error("PDF API Error:", error)
+        throw error
+    }
 }

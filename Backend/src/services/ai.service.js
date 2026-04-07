@@ -1,88 +1,158 @@
-import {GoogleGenAI} from "@google/genai";
-import {z} from "zod";
-import {zodToJsonSchema} from "zod-to-json-schema";
-import   puppeteer from "puppeteer-core";
-import dotenv from "dotenv";
-dotenv.config()
 
+import { configDotenv } from 'dotenv';
+configDotenv();
+import {GoogleGenAI} from '@google/genai';
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import puppeteer from 'puppeteer';
 
 const ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY
-})
-
+  apiKey:process.env.GEMINI_API_KEY
+});
 
 const interviewReportSchema = z.object({
-    matchScore: z.number().describe("A score between 0 and 100 indicating how well the candidate's profile matches the job describe"),
-    technicalQuestions: z.array(z.object({
-        question: z.string().describe("The technical question can be asked in the interview"),
-        intention: z.string().describe("The intention of interviewer behind asking this question"),
-        answer: z.string().describe("How to answer this question, what points to cover, what approach to take etc.")
-    })).describe("Technical questions that can be asked in the interview along with their intention and how to answer them"),
-    behavioralQuestions: z.array(z.object({
-        question: z.string().describe("The technical question can be asked in the interview"),
-        intention: z.string().describe("The intention of interviewer behind asking this question"),
-        answer: z.string().describe("How to answer this question, what points to cover, what approach to take etc.")
-    })).describe("Behavioral questions that can be asked in the interview along with their intention and how to answer them"),
-    skillGaps: z.array(z.object({
-        skill: z.string().describe("The skill which the candidate is lacking"),
-        severity: z.enum([ "low", "medium", "high" ]).describe("The severity of this skill gap, i.e. how important is this skill for the job and how much it can impact the candidate's chances")
-    })).describe("List of skill gaps in the candidate's profile along with their severity"),
-    preparationPlan: z.array(z.object({
+  matchScore: z.number().describe("A score between 0 and 100 indicating how well the candidate's profile matches the job describe"),
+  technicalQuestions : z.array(z.object({
+    questions: z.string().describe("The technical question can be ask by the interviewer"),
+    intention: z.string().describe("the intention of interviewer behind asking this question"),
+    answer: z.string().describe("how to answer this question, what point cover , what approch to take etc.")
+  })).describe("Technical questions that can be asked in interview along with their intention and how to answer them"),
+
+  behavioralQuestions : z.array(z.object({
+    questions: z.string().describe("The behavioral question can be ask by the interviewer"),
+    intention: z.string().describe("the intention of interviewer behind asking this question"),
+    answer: z.string().describe("how to answer this question, what point cover , what approch to take etc.")
+  })).describe("Behavioral questions that can be asked in interview along with their intention and how to answer them"),
+
+ skillGaps : z.array(z.object({
+  skill : z.string().describe("the skill which the candidate is lacking"),
+  severity : z.enum(["low" , "medium" , "high"]).describe("The severity of this skill gap, i.e. how important is this skill for the job and how much it can impact the candidate's chances")
+ })).describe("List of skill gaps in the candidate's profile along with their severity"),
+
+ preparationPlan: z.array(z.object({
         day: z.number().describe("The day number in the preparation plan, starting from 1"),
         focus: z.string().describe("The main focus of this day in the preparation plan, e.g. data structures, system design, mock interviews etc."),
         tasks: z.array(z.string()).describe("List of tasks to be done on this day to follow the preparation plan, e.g. read a specific book or article, solve a set of problems, watch a video etc.")
     })).describe("A day-wise preparation plan for the candidate to follow in order to prepare for the interview effectively"),
-    title: z.string().describe("The title of the job for which the interview report is generated"),
+
+title: z.string().describe("The title of the job for which the interview report is generated"),
+
 })
 
-async function generateInterviewReport({ resume, selfDescription, jobDescription }) {
 
+export const generateInterviewReport = async ({
+  resume,
+  selfDescription,
+  jobDescription
+}) => {
 
-    const prompt = `Generate an interview report for a candidate with the following details:
-                        Resume: ${resume}
-                        Self Description: ${selfDescription}
-                        Job Description: ${jobDescription}
-`
+  const prompt = `
+You are an expert technical interviewer.
 
-    const response = await ai.models.generateContent({
-        model: "gemini-1.5-flash",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: zodToJsonSchema(interviewReportSchema),
-        }
-    })
+Generate a COMPLETE interview report.
 
-    return JSON.parse(response.text)
+STRICT RULES:
+- Minimum 5 technical questions
+- Minimum 3 behavioral questions
+- DO NOT return empty arrays
+- If unsure, STILL generate realistic questions
+- ALWAYS fill all fields
 
+Return ONLY valid JSON in this format:
 
+{
+  "matchScore": number,
+  "technicalQuestions": [
+    {
+      "questions": "string",
+      "intention": "string",
+      "answer": "string"
+    }
+  ],
+  "behavioralQuestions": [...],
+  "skillGaps": [...],
+  "preparationPlan": [...],
+  "title": "string"
 }
 
+Resume: ${resume}
+Self Description: ${selfDescription}
+Job Description: ${jobDescription}
+`
+
+  const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      // responseSchema: zodToJsonSchema(interviewReportSchema),
+    }
+  });
+
+
+  let data;
+
+  try {
+    data = JSON.parse(response.text);
+  } catch (err) {
+    console.error("RAW AI:", response.text);
+    throw new Error("Invalid AI JSON");
+  }
+
+  return data;
+};
 
 
 async function generatePdfFromHtml(htmlContent) {
-    const browser = await puppeteer.launch()
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: "networkidle0" })
+  const browser = await puppeteer.launch({
+  executablePath:
+    process.env.CHROME_PATH ||
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  headless: true,
+  args: [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu"
+  ]
+});
 
-    const pdfBuffer = await page.pdf({
-        format: "A4", margin: {
-            top: "20mm",
-            bottom: "20mm",
-            left: "15mm",
-            right: "15mm"
-        }
-    })
+  const page = await browser.newPage();
 
-    await browser.close()
+  await page.setContent(`
+  <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        h1, h2, h3 { color: #333; }
+      </style>
+    </head>
+    <body>
+      ${htmlContent}
+    </body>
+  </html>
+`, { waitUntil: "networkidle0" });
 
-    return pdfBuffer
+  const pdfBuffer = await page.pdf({
+    format: "A4",
+    scale:0.5,
+    printBackground: true, 
+    margin: {
+      top: "3mm",
+      bottom: "3mm",
+      left: "3mm",
+      right:"3mm"
+    }
+  });
+
+  await browser.close();
+
+  return pdfBuffer;
 }
+ export async function generateResumePdf({ resume, selfDescription, jobDescription }) {
 
-async function generateResumePdf({ resume, selfDescription, jobDescription }) {
-
-    const resumePdfSchema = z.object({
-        html: z.string().describe("The HTML content of the resume which can be converted to PDF using any library like puppeteer")
+   const resumePdfSchema = z.object({
+    html: z.string().describe("The HTML content of the resume which can be converted to PDF using any library like puppeteer")
     })
 
     const prompt = `Generate resume for a candidate with the following details:
@@ -98,26 +168,50 @@ async function generateResumePdf({ resume, selfDescription, jobDescription }) {
                         The resume should not be so lengthy, it should ideally be 1-2 pages long when converted to PDF. Focus on quality rather than quantity and make sure to include all the relevant information that can increase the candidate's chances of getting an interview call for the given job description.
                     `
 
-    const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-        config: {
-            responseMimeType: "application/json",
-            responseSchema: zodToJsonSchema(resumePdfSchema),
-        }
-    })
+                   
+                
+                const response = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: zodToJsonSchema(resumePdfSchema),
+    }
+  });
 
 
-    const jsonContent = JSON.parse(response.text)
+  
+  let jsonContent;
 
-    const pdfBuffer = await generatePdfFromHtml(jsonContent.html)
+  try {
+    const cleanedText = response.text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
 
-    return pdfBuffer
+    jsonContent = JSON.parse(cleanedText);
+
+
+
+  } catch (err) {
+    console.error("RAW AI RESPONSE:", response.text);
+    throw new Error("Invalid AI JSON");
+  }
+
+  if (!jsonContent.html) {
+    throw new Error("Missing HTML from AI");
+  }
+
+  let pdfBuffer;
+
+  try {
+    pdfBuffer = await generatePdfFromHtml(jsonContent.html);
+  } catch (err) {
+    console.error(" Puppeteer Error:", err);
+    throw new Error("PDF generation failed");
+  }
+
+  return pdfBuffer;
 
 }
 
-
-export {
-    generateInterviewReport ,
-    generateResumePdf
-}
